@@ -1,0 +1,52 @@
+name: 'Create or Comment on CI Failure Issue'
+description: 'Creates a GitHub issue or adds a comment when the default branch CI fails. If an open issue with the same title already exists, adds a comment instead of creating a duplicate.'
+
+branding:
+  icon: 'alert-circle'
+  color: 'red'
+
+inputs:
+  github-token:
+    description: 'GitHub token with issues write permission'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create or comment on CI failure issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        OWNER: ${{ github.repository_owner }}
+        REPO: ${{ github.event.repository.name }}
+        SHA: ${{ github.event.check_suite.head_sha }}
+        COMMIT_MESSAGE: ${{ github.event.check_suite.head_commit.message }}
+      run: |
+        ISSUE_TITLE="[CI] Default branch CI failure"
+        SHORT_SHA="${SHA:0:7}"
+        COMMIT_MSG_FIRST_LINE=$(printf '%s' "$COMMIT_MESSAGE" | head -1)
+        [ -z "$COMMIT_MSG_FIRST_LINE" ] && COMMIT_MSG_FIRST_LINE="$SHORT_SHA"
+
+        EXISTING_ISSUE_NUMBER=$(gh issue list \
+          -R "$OWNER/$REPO" \
+          --state open \
+          --limit 100 \
+          --json number,title \
+          --jq '.[] | select(.title == "[CI] Default branch CI failure") | .number' \
+          | head -1)
+
+        BODY_FILE=$(mktemp)
+        printf 'CI check suite failed on the default branch.\n\n- Commit: [%s](https://github.com/%s/%s/commit/%s)\n- Message: %s\n- Checks: https://github.com/%s/%s/commit/%s/checks\n' \
+          "$SHORT_SHA" "$OWNER" "$REPO" "$SHA" \
+          "$COMMIT_MSG_FIRST_LINE" \
+          "$OWNER" "$REPO" "$SHA" > "$BODY_FILE"
+
+        if [ -n "$EXISTING_ISSUE_NUMBER" ]; then
+          echo "Found existing issue #${EXISTING_ISSUE_NUMBER}, adding comment"
+          gh issue comment "$EXISTING_ISSUE_NUMBER" -R "$OWNER/$REPO" --body-file "$BODY_FILE"
+        else
+          echo "No existing issue found, creating new issue"
+          gh issue create -R "$OWNER/$REPO" --title "$ISSUE_TITLE" --body-file "$BODY_FILE"
+        fi
+
+        rm -f "$BODY_FILE"
