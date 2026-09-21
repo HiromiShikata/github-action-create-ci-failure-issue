@@ -66,6 +66,11 @@ run_test "required protected branch" \
   0 \
   "Warning: could not enable auto merge"
 
+run_test "protected branch without required prefix" \
+  '{"errors":[{"type":"OTHER","message":"Protected branch main requires approvals"}]}' \
+  0 \
+  "Warning: could not enable auto merge"
+
 run_test "unknown error fails" \
   '{"errors":[{"type":"OTHER","message":"some unexpected error occurred"}]}' \
   1 \
